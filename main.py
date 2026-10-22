@@ -9,10 +9,11 @@ import threading
 import tkinter as tk
 import webbrowser
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
+from safety import create_backup, restore_backup, validate_package, inspect_folder, SafetyError
 from urllib.request import Request, urlopen
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 REPO = "samimustafaa/skin-changer-cd"
 BASE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "sg0hann" / "SkinChanger"
 CONFIG = BASE / "settings.json"
@@ -71,12 +72,14 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("sg0hann Skin Changer")
-        self.geometry("760x540")
-        self.minsize(700, 500)
+        self.geometry("780x690")
+        self.minsize(740, 650)
         self.configure(bg=BG)
         self.settings = read_settings()
         self.selected = self.settings.get("selected", "")
         self.buttons = {}
+        self.game_folder = Path(self.settings.get("game_folder", "C:/Creative Destruction"))
+        self.package_path = None
         self.label("SG0HANN  /  SKIN CHANGER", 24, FG, True).pack(anchor="w", padx=30, pady=(25, 3))
         self.label("VERSION " + VERSION + "  •  Fashion Guru concept launcher", 11, MUTED).pack(anchor="w", padx=30)
         self.status = self.label("Checking for Creative Destruction...", 12, MUTED, True)
@@ -101,6 +104,23 @@ class App(tk.Tk):
                       fg=MUTED, bg=PANEL, bd=0, cursor="hand2").pack(pady=(13, 0))
         self.message = self.label("Select a concept. In-game replacement is not implemented.", 10, MUTED)
         self.message.pack(anchor="w", padx=30, pady=(15, 5))
+        safety = tk.Frame(self, bg=PANEL, padx=12, pady=12)
+        safety.pack(fill="x", padx=30, pady=(4, 5))
+        self.label("SAFE INSTALLATION CONTROLS", 12, FG, True, safety).pack(anchor="w")
+        self.folder_label = self.label("Game folder: " + str(self.game_folder), 10, MUTED, False, safety)
+        self.folder_label.pack(anchor="w", pady=(5, 5))
+        actions = tk.Frame(safety, bg=PANEL)
+        actions.pack(fill="x")
+        for title, callback in [("GAME FOLDER", self.pick_folder), ("CHECK PACKAGE", self.pick_package),
+                                ("BACK UP", self.backup), ("RESTORE", self.restore)]:
+            tk.Button(actions, text=title, command=callback, bg="#354257", fg=FG, relief="flat",
+                      padx=9, pady=8).pack(side="left", padx=(0, 7))
+        self.apply_button = tk.Button(safety, text="APPLY SKIN — UNAVAILABLE (NO VERIFIED GAME ADAPTER)",
+                                      state="disabled", disabledforeground=MUTED, bg="#344052",
+                                      relief="flat", padx=12, pady=10)
+        self.apply_button.pack(fill="x", pady=(10, 0))
+        self.label("No memory hooks, injection or anti-cheat workarounds. Backups are read-only copies.",
+                   9, MUTED, False, safety).pack(anchor="w", pady=(8, 0))
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=30, pady=(8, 26))
         for title, callback in [("RESET SELECTION", self.reset),
@@ -135,9 +155,63 @@ class App(tk.Tk):
         self.paint()
         self.message.config(text="Selection cleared. Original game files remain untouched.")
 
+    def pick_folder(self):
+        folder = filedialog.askdirectory(initialdir=str(self.game_folder), title="Select Creative Destruction folder")
+        if folder:
+            self.game_folder = Path(folder)
+            self.settings["game_folder"] = str(self.game_folder)
+            write_settings(self.settings)
+            self.folder_label.config(text="Game folder: " + str(self.game_folder))
+            self.message.config(text="Folder selected. Original files have not been changed.")
+
+    def pick_package(self):
+        path = filedialog.askopenfilename(title="Inspect skin package", filetypes=[("Skin package", "*.zip")])
+        if not path:
+            return
+        try:
+            info = validate_package(Path(path))
+            self.package_path = Path(path)
+            messagebox.showinfo("Package verified (metadata only)",
+                                "Package: " + info["name"] + "\\nTarget: " + info["target"] +
+                                "\\nAssets: " + str(info["asset_count"]) +
+                                "\\nNo game installation support is available yet.")
+            self.message.config(text="Package metadata validated. Apply remains disabled.")
+        except SafetyError as err:
+            messagebox.showerror("Invalid package", str(err))
+
+    def backup(self):
+        if game_running():
+            messagebox.showwarning("Game running", "Close Creative Destruction before making a backup.")
+            return
+        try:
+            files = inspect_folder(self.game_folder)
+            if not files:
+                messagebox.showwarning("No files", "No recognized game archives were found in the selected folder.")
+                return
+            dest = create_backup(self.game_folder, BASE / "backups", files)
+            self.message.config(text="Backup created: " + str(dest))
+            messagebox.showinfo("Backup complete", "Read-only backup created at:\\n" + str(dest))
+        except (OSError, SafetyError) as err:
+            messagebox.showerror("Backup failed", str(err))
+
+    def restore(self):
+        if game_running():
+            messagebox.showwarning("Game running", "Close Creative Destruction before restoring.")
+            return
+        folder = filedialog.askdirectory(initialdir=str(BASE / "backups"), title="Select a backup folder")
+        if not folder:
+            return
+        try:
+            restore_backup(Path(folder), self.game_folder)
+            self.message.config(text="Backup successfully restored.")
+            messagebox.showinfo("Restore complete", "Verified archive copies restored.")
+        except (OSError, SafetyError) as err:
+            messagebox.showerror("Restore blocked", str(err))
+
     def scan(self):
-        self.status.config(text="●  GAME DETECTED" if game_running() else "●  GAME NOT DETECTED",
-                           fg="#55dca1" if game_running() else "#f18188")
+        running = game_running()
+        self.status.config(text="●  GAME DETECTED — CLOSE BEFORE EDITING" if running else "●  GAME NOT DETECTED",
+                           fg="#55dca1" if running else "#f18188")
         self.after(2500, self.scan)
 
     def check_updates(self, manual):
