@@ -33,10 +33,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.2.0"
+          $tag = "v0.3.0"
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag dist/*-setup.exe --clobber
           } else {
-            gh release create $tag dist/*-setup.exe --title "sg0hann Skin Changer v0.2.0" --notes "Windows prototype launcher with game detection, two skin selections, and in-app update checks. Actual in-game skin replacement is not yet implemented." --target $env:GITHUB_SHA
+            gh release create $tag dist/*-setup.exe --title "sg0hann Skin Changer v0.3.0" --notes "Safety preview: game detection, skin preference, validated package inspection, archive backup/restore, and update checks. In-game replacement is disabled pending verified supported assets." --target $env:GITHUB_SHA
           }
