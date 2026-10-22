@@ -1,0 +1,42 @@
+name: Build and Release Windows Installer
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install builder
+        run: pip install -r requirements-build.txt
+      - name: Build executable
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name sg0hann-SkinChanger main.py
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sg0hann-SkinChanger-Windows
+          path: dist/*-setup.exe
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v0.2.0"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist/*-setup.exe --clobber
+          } else {
+            gh release create $tag dist/*-setup.exe --title "sg0hann Skin Changer v0.2.0" --notes "Windows prototype launcher with game detection, two skin selections, and in-app update checks. Actual in-game skin replacement is not yet implemented." --target $env:GITHUB_SHA
+          }
